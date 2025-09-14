@@ -357,8 +357,8 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Share Button */}
-          {!isAnonymousMode && (
+          {/* Share Button - Show for authenticated users */}
+          {token && user && (
             <ShareButton noteId={noteId} noteTitle={`Note ${noteId}`} />
           )}
           
@@ -467,6 +467,29 @@ export function NoteEditor({ noteId }: { noteId: number }) {
           </svg>
           Redo
         </Button>
+      </div>
+
+      {/* Debug Info - Temporary for troubleshooting */}
+      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+        <h3 className="text-sm font-semibold mb-2 text-yellow-800 dark:text-yellow-200">🔧 Debug Info</h3>
+        <div className="grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <span className="font-medium">Auth Token:</span>
+            <span className="ml-2 font-mono">{token ? 'Present' : 'Missing'}</span>
+          </div>
+          <div>
+            <span className="font-medium">User:</span>
+            <span className="ml-2 font-mono">{user?.name || user?.email || 'None'}</span>
+          </div>
+          <div>
+            <span className="font-medium">Anonymous Mode:</span>
+            <span className="ml-2 font-mono">{isAnonymousMode ? 'Yes' : 'No'}</span>
+          </div>
+          <div>
+            <span className="font-medium">Share Button:</span>
+            <span className="ml-2 font-mono">{token && user ? 'Should Show' : 'Hidden'}</span>
+          </div>
+        </div>
       </div>
 
       {/* Editor */}
