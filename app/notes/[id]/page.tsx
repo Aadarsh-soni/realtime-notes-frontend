@@ -19,15 +19,27 @@ export default function NoteEditorPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!token) return;
-    
     async function loadNote() {
       setLoading(true);
       setError("");
       
       try {
-        const data = await notesAPI.getNote(noteId);
-        setFolderId(data.folderId);
+        // Check if we're in share mode (anonymous)
+        const urlParams = new URLSearchParams(window.location.search);
+        const isShareMode = urlParams.get('share') === 'true';
+        
+        if (isShareMode && !token) {
+          // For anonymous mode, we don't need to load folder info
+          // The NoteEditor component will handle loading the note content
+          setFolderId(null);
+        } else if (token) {
+          // For authenticated users, load the note data
+          const data = await notesAPI.getNote(noteId);
+          setFolderId(data.folderId);
+        } else {
+          // No token and not in share mode - redirect to login
+          setError("Please log in to access this note.");
+        }
       } catch (err: unknown) {
         console.error("Error loading note:", err);
         
@@ -115,8 +127,12 @@ export default function NoteEditorPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <FolderSelect noteId={noteId} currentFolderId={folderId} />
-          <VersionHistory noteId={noteId} />
+          {token && (
+            <>
+              <FolderSelect noteId={noteId} currentFolderId={folderId} />
+              <VersionHistory noteId={noteId} />
+            </>
+          )}
         </div>
       </div>
 

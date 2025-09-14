@@ -25,6 +25,7 @@ export function NoteEditor({ noteId }: { noteId: number }) {
   const [collaborationError, setCollaborationError] = useState("");
   const [isAnonymousMode, setIsAnonymousMode] = useState(false);
   const [anonymousUser, setAnonymousUser] = useState<{id: number, name: string} | null>(null);
+  const [loading, setLoading] = useState(true);
   
   const collaborationRef = useRef<RealtimeCollaboration | null>(null);
   const lastOperationRef = useRef<number>(0);
@@ -60,6 +61,8 @@ export function NoteEditor({ noteId }: { noteId: number }) {
           console.error("Error loading note anonymously:", error);
           setContent("");
           setOriginalContent("");
+        } finally {
+          setLoading(false);
         }
       };
       
@@ -73,10 +76,15 @@ export function NoteEditor({ noteId }: { noteId: number }) {
           setOriginalContent(note.content || "");
         } catch (error) {
           console.error("Error loading note:", error);
+        } finally {
+          setLoading(false);
         }
       };
       
       loadNote();
+    } else {
+      // No token and not in share mode - set loading to false
+      setLoading(false);
     }
   }, [noteId, token]);
 
@@ -304,6 +312,15 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     }
   }
 
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+        <span className="ml-2 text-muted-foreground">Loading note...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
