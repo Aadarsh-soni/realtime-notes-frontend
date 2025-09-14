@@ -30,6 +30,8 @@ export class RealtimeCollaboration {
   private userId: number;
   private userName: string;
   private authToken: string;
+  private sessionId: string | null = null;
+  private isAnonymous: boolean = false;
   private pollingInterval: NodeJS.Timeout | null = null;
   private lastOperationTime: number = 0;
   private onOperation: (operation: Operation) => void;
@@ -47,6 +49,7 @@ export class RealtimeCollaboration {
     this.userId = userId;
     this.userName = userName;
     this.authToken = authToken;
+    this.isAnonymous = authToken === 'anonymous';
     this.onOperation = callbacks.onOperation;
     this.onPresenceUpdate = callbacks.onPresenceUpdate;
     this.onError = callbacks.onError;
@@ -55,21 +58,32 @@ export class RealtimeCollaboration {
   // Join collaboration
   async join(): Promise<{ success: boolean; message?: string }> {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if not anonymous
+      if (this.authToken !== 'anonymous') {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+      
       const response = await fetch('https://realtime-notes-backend.vercel.app/realtime/join', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.authToken}`
-        },
+        headers,
         body: JSON.stringify({
           noteId: this.noteId,
-          userName: this.userName
+          userName: this.userName,
+          isAnonymous: this.isAnonymous
         })
       });
 
       const data = await response.json();
       
       if (data.success) {
+        // Store sessionId for anonymous users
+        if (this.isAnonymous && data.sessionId) {
+          this.sessionId = data.sessionId;
+        }
         this.startPolling();
       }
       
@@ -98,10 +112,15 @@ export class RealtimeCollaboration {
   // Poll for new operations
   private async pollForUpdates(): Promise<void> {
     try {
+      const headers: Record<string, string> = {};
+      
+      // Only add auth header if not anonymous
+      if (this.authToken !== 'anonymous') {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+      
       const response = await fetch(`https://realtime-notes-backend.vercel.app/realtime/operations/${this.noteId}?since=${this.lastOperationTime}`, {
-        headers: {
-          'Authorization': `Bearer ${this.authToken}`
-        }
+        headers
       });
       
       if (!response.ok) return;
@@ -123,10 +142,15 @@ export class RealtimeCollaboration {
   // Poll for presence updates
   private async pollForPresence(): Promise<void> {
     try {
+      const headers: Record<string, string> = {};
+      
+      // Only add auth header if not anonymous
+      if (this.authToken !== 'anonymous') {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+      
       const response = await fetch(`https://realtime-notes-backend.vercel.app/realtime/users/${this.noteId}`, {
-        headers: {
-          'Authorization': `Bearer ${this.authToken}`
-        }
+        headers
       });
       
       if (!response.ok) return;
@@ -141,19 +165,33 @@ export class RealtimeCollaboration {
   // Send text operation
   async sendOperation(baseVersion: number, position: number, deleteLen: number, insert: string): Promise<{ success: boolean; message?: string }> {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if not anonymous
+      if (this.authToken !== 'anonymous') {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+      
+      const requestBody: any = {
+        noteId: this.noteId,
+        baseVersion,
+        position,
+        deleteLen,
+        insert,
+        isAnonymous: this.isAnonymous
+      };
+
+      // Add sessionId for anonymous users
+      if (this.isAnonymous && this.sessionId) {
+        requestBody.sessionId = this.sessionId;
+      }
+
       const response = await fetch('https://realtime-notes-backend.vercel.app/realtime/operation', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.authToken}`
-        },
-        body: JSON.stringify({
-          noteId: this.noteId,
-          baseVersion,
-          position,
-          deleteLen,
-          insert
-        })
+        headers,
+        body: JSON.stringify(requestBody)
       });
 
       return await response.json();
@@ -166,16 +204,30 @@ export class RealtimeCollaboration {
   // Send heartbeat to stay active
   private async sendHeartbeat(): Promise<void> {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if not anonymous
+      if (this.authToken !== 'anonymous') {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+      
+      const requestBody: any = {
+        noteId: this.noteId,
+        userName: this.userName,
+        isAnonymous: this.isAnonymous
+      };
+
+      // Add sessionId for anonymous users
+      if (this.isAnonymous && this.sessionId) {
+        requestBody.sessionId = this.sessionId;
+      }
+
       await fetch('https://realtime-notes-backend.vercel.app/realtime/heartbeat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.authToken}`
-        },
-        body: JSON.stringify({
-          noteId: this.noteId,
-          userName: this.userName
-        })
+        headers,
+        body: JSON.stringify(requestBody)
       });
     } catch (error) {
       console.error('Failed to send heartbeat:', error);
@@ -190,16 +242,30 @@ export class RealtimeCollaboration {
     }
     
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if not anonymous
+      if (this.authToken !== 'anonymous') {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+      
+      const requestBody: any = {
+        noteId: this.noteId,
+        userName: this.userName,
+        isAnonymous: this.isAnonymous
+      };
+
+      // Add sessionId for anonymous users
+      if (this.isAnonymous && this.sessionId) {
+        requestBody.sessionId = this.sessionId;
+      }
+
       await fetch('https://realtime-notes-backend.vercel.app/realtime/leave', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.authToken}`
-        },
-        body: JSON.stringify({
-          noteId: this.noteId,
-          userName: this.userName
-        })
+        headers,
+        body: JSON.stringify(requestBody)
       });
     } catch (error) {
       console.error('Failed to leave collaboration:', error);
@@ -209,12 +275,26 @@ export class RealtimeCollaboration {
   // Undo last operation
   async undo(): Promise<{ success: boolean; message?: string; content?: string }> {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if not anonymous
+      if (!this.isAnonymous) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
+      const requestBody: any = {};
+      
+      // Add sessionId for anonymous users
+      if (this.isAnonymous && this.sessionId) {
+        requestBody.sessionId = this.sessionId;
+      }
+
       const response = await fetch(`https://realtime-notes-backend.vercel.app/realtime/undo/${this.noteId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.authToken}`
-        }
+        headers,
+        body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined
       });
 
       if (!response.ok) {
@@ -242,12 +322,26 @@ export class RealtimeCollaboration {
   // Redo last undone operation
   async redo(): Promise<{ success: boolean; message?: string; content?: string }> {
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Only add auth header if not anonymous
+      if (!this.isAnonymous) {
+        headers['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
+      const requestBody: any = {};
+      
+      // Add sessionId for anonymous users
+      if (this.isAnonymous && this.sessionId) {
+        requestBody.sessionId = this.sessionId;
+      }
+
       const response = await fetch(`https://realtime-notes-backend.vercel.app/realtime/redo/${this.noteId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.authToken}`
-        }
+        headers,
+        body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined
       });
 
       if (!response.ok) {

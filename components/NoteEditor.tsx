@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuthStore } from "@/libs/store";
 import { Button } from "@/components/ui/button";
 import { notesAPI } from "@/libs/api";
 import { RealtimeCollaboration, Operation, PresenceUser as RealtimePresenceUser } from "@/libs/realtime";
+import { ShareButton } from "@/components/ShareButton";
 
 interface PresenceUser {
   id: number;
@@ -22,39 +23,84 @@ export function NoteEditor({ noteId }: { noteId: number }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [collaborationError, setCollaborationError] = useState("");
+  const [isAnonymousMode, setIsAnonymousMode] = useState(false);
+  const [anonymousUser, setAnonymousUser] = useState<{id: number, name: string} | null>(null);
   
   const collaborationRef = useRef<RealtimeCollaboration | null>(null);
   const lastOperationRef = useRef<number>(0);
 
-  // Load note content
+  // Check for anonymous mode and load note content
   useEffect(() => {
-    if (!token) return;
-
-    const loadNote = async () => {
-      try {
-        const note = await notesAPI.getNote(noteId);
-        setContent(note.content || "");
-        setOriginalContent(note.content || "");
-      } catch (error) {
-        console.error("Error loading note:", error);
-      }
-    };
-
-    loadNote();
+    // Check if we're in share mode (anonymous)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isShareMode = urlParams.get('share') === 'true';
+    
+    if (isShareMode && !token) {
+      // Anonymous mode - create a temporary user
+      const anonymousId = Math.floor(Math.random() * 1000000);
+      const anonymousName = `Anonymous User ${anonymousId}`;
+      setAnonymousUser({ id: anonymousId, name: anonymousName });
+      setIsAnonymousMode(true);
+      
+      // Load note content without authentication
+      const loadNoteAnonymous = async () => {
+        try {
+          // Try to load note without auth (this might fail, but we'll handle it)
+          const response = await fetch(`https://realtime-notes-backend.vercel.app/notes/${noteId}`);
+          if (response.ok) {
+            const note = await response.json();
+            setContent(note.content || "");
+            setOriginalContent(note.content || "");
+          } else {
+            // If we can't load the note, start with empty content
+            setContent("");
+            setOriginalContent("");
+          }
+        } catch (error) {
+          console.error("Error loading note anonymously:", error);
+          setContent("");
+          setOriginalContent("");
+        }
+      };
+      
+      loadNoteAnonymous();
+    } else if (token) {
+      // Authenticated mode
+      const loadNote = async () => {
+        try {
+          const note = await notesAPI.getNote(noteId);
+          setContent(note.content || "");
+          setOriginalContent(note.content || "");
+        } catch (error) {
+          console.error("Error loading note:", error);
+        }
+      };
+      
+      loadNote();
+    }
   }, [noteId, token]);
 
   // Save note content
   const handleSave = async () => {
-    if (!token || saving) return;
+    if (saving) return;
 
     setSaving(true);
     setSaved(false);
 
     try {
-      await notesAPI.updateNote(noteId, { content });
-      setOriginalContent(content);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000); // Hide saved message after 2 seconds
+      if (isAnonymousMode) {
+        // For anonymous mode, we can't save to the backend
+        // Just update the local state
+        setOriginalContent(content);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+        console.log("Note content updated locally (anonymous mode)");
+      } else if (token) {
+        await notesAPI.updateNote(noteId, { content });
+        setOriginalContent(content);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
     } catch (error) {
       console.error("Error saving note:", error);
     } finally {
@@ -67,16 +113,19 @@ export function NoteEditor({ noteId }: { noteId: number }) {
 
   // Initialize real-time collaboration
   useEffect(() => { 
-    if (!token || !user) return;
+    const currentUser = isAnonymousMode ? anonymousUser : user;
+    const currentToken = isAnonymousMode ? 'anonymous' : token;
+    
+    if (!currentUser) return;
 
     const initializeCollaboration = async () => {
       try {
         // Create collaboration instance
         const collaboration = new RealtimeCollaboration(
           noteId,
-          user.id,
-          user.name || user.email || `User ${user.id}`,
-          token,
+          currentUser.id,
+          currentUser.name || `User ${currentUser.id}`,
+          currentToken || '',
           {
             onOperation: (operation: Operation) => {
               console.log('Received operation:', operation);
@@ -131,7 +180,73 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         collaborationRef.current = null;
       }
     };
-  }, [noteId, token, user]);
+  }, [noteId, token, user, isAnonymousMode, anonymousUser]);
+
+  // Undo function
+  const sendUndo = useCallback(async () => {
+    if (!token) {
+      console.log("Undo not available - no authentication token");
+      setCollaborationError("Please log in to use undo functionality");
+      return;
+    }
+
+    if (!connected || !collaborationRef.current) {
+      console.log("Undo not available - not connected to collaboration");
+      setCollaborationError("Undo not available - connect to real-time collaboration first");
+      return;
+    }
+
+    console.log("Attempting undo operation...");
+    try {
+      const result = await collaborationRef.current.undo();
+      console.log("Undo result:", result);
+      if (result.success && result.content !== undefined) {
+        setContent(result.content);
+        setOriginalContent(result.content);
+        setCollaborationError(""); // Clear any previous errors
+        console.log("Undo successful");
+      } else {
+        console.error("Undo failed:", result.message);
+        setCollaborationError(result.message || "Undo failed");
+      }
+    } catch (error) {
+      console.error("Undo error:", error);
+      setCollaborationError("Failed to undo operation - please try again");
+    }
+  }, [token, connected]);
+
+  // Redo function
+  const sendRedo = useCallback(async () => {
+    if (!token) {
+      console.log("Redo not available - no authentication token");
+      setCollaborationError("Please log in to use redo functionality");
+      return;
+    }
+
+    if (!connected || !collaborationRef.current) {
+      console.log("Redo not available - not connected to collaboration");
+      setCollaborationError("Redo not available - connect to real-time collaboration first");
+      return;
+    }
+
+    console.log("Attempting redo operation...");
+    try {
+      const result = await collaborationRef.current.redo();
+      console.log("Redo result:", result);
+      if (result.success && result.content !== undefined) {
+        setContent(result.content);
+        setOriginalContent(result.content);
+        setCollaborationError(""); // Clear any previous errors
+        console.log("Redo successful");
+      } else {
+        console.error("Redo failed:", result.message);
+        setCollaborationError(result.message || "Redo failed");
+      }
+    } catch (error) {
+      console.error("Redo error:", error);
+      setCollaborationError("Failed to redo operation - please try again");
+    }
+  }, [token, connected]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -158,7 +273,7 @@ export function NoteEditor({ noteId }: { noteId: number }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [connected, collaborationRef.current]);
+  }, [connected, sendUndo, sendRedo]);
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newText = e.target.value;
@@ -189,72 +304,31 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     }
   }
 
-  async function sendUndo() {
-    if (!token) {
-      console.log("Undo not available - no authentication token");
-      setCollaborationError("Please log in to use undo functionality");
-      return;
-    }
-
-    if (!connected || !collaborationRef.current) {
-      console.log("Undo not available - not connected to collaboration");
-      setCollaborationError("Undo not available - connect to real-time collaboration first");
-      return;
-    }
-
-    console.log("Attempting undo operation...");
-    try {
-      const result = await collaborationRef.current.undo();
-      console.log("Undo result:", result);
-      if (result.success && result.content !== undefined) {
-        setContent(result.content);
-        setOriginalContent(result.content);
-        setCollaborationError(""); // Clear any previous errors
-        console.log("Undo successful");
-      } else {
-        console.error("Undo failed:", result.message);
-        setCollaborationError(result.message || "Undo failed");
-      }
-    } catch (error) {
-      console.error("Undo error:", error);
-      setCollaborationError("Failed to undo operation - please try again");
-    }
-  }
-
-  async function sendRedo() {
-    if (!token) {
-      console.log("Redo not available - no authentication token");
-      setCollaborationError("Please log in to use redo functionality");
-      return;
-    }
-
-    if (!connected || !collaborationRef.current) {
-      console.log("Redo not available - not connected to collaboration");
-      setCollaborationError("Redo not available - connect to real-time collaboration first");
-      return;
-    }
-
-    console.log("Attempting redo operation...");
-    try {
-      const result = await collaborationRef.current.redo();
-      console.log("Redo result:", result);
-      if (result.success && result.content !== undefined) {
-        setContent(result.content);
-        setOriginalContent(result.content);
-        setCollaborationError(""); // Clear any previous errors
-        console.log("Redo successful");
-      } else {
-        console.error("Redo failed:", result.message);
-        setCollaborationError(result.message || "Redo failed");
-      }
-    } catch (error) {
-      console.error("Redo error:", error);
-      setCollaborationError("Failed to redo operation - please try again");
-    }
-  }
 
   return (
     <div className="space-y-6">
+      {/* Anonymous Mode Banner */}
+      {isAnonymousMode && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <div className="text-blue-600 dark:text-blue-400">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-medium text-blue-800 dark:text-blue-200">
+                Anonymous Collaboration Mode
+              </p>
+              <p className="text-blue-700 dark:text-blue-300 mt-1 text-sm">
+                You&apos;re editing as {anonymousUser?.name}. Changes sync in real-time with other users. 
+                No account required - just share the link!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Status Bar */}
       <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
         <div className="flex items-center gap-4">
@@ -282,21 +356,28 @@ export function NoteEditor({ noteId }: { noteId: number }) {
           )}
         </div>
 
-        {/* Save Button */}
-        <Button 
-          onClick={handleSave} 
-          disabled={!hasChanges || saving}
-          className="min-w-[100px]"
-        >
-          {saving ? (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
-              Saving...
-            </div>
-          ) : (
-            "Save Note"
+        <div className="flex items-center gap-2">
+          {/* Share Button */}
+          {!isAnonymousMode && (
+            <ShareButton noteId={noteId} noteTitle={`Note ${noteId}`} />
           )}
-        </Button>
+          
+          {/* Save Button */}
+          <Button 
+            onClick={handleSave} 
+            disabled={!hasChanges || saving}
+            className="min-w-[100px]"
+          >
+            {saving ? (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin"></div>
+                Saving...
+              </div>
+            ) : (
+              isAnonymousMode ? "Updated" : "Save Note"
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Collaboration Status */}
