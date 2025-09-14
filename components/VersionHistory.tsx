@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import axios from "axios";
 import { useAuthStore } from "@/libs/store";
+import { api } from "@/libs/api";
 import {
   Dialog,
   DialogContent,
@@ -26,10 +26,7 @@ export function VersionHistory({ noteId }: { noteId: number }) {
 
   async function loadVersions() {
     if (!token) return;
-    const res = await axios.get(
-      `${process.env.NEXT_PUBLIC_API_URL}/notes/${noteId}/versions`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const res = await api.get(`/notes/${noteId}/versions`);
     setVersions(res.data);
   }
 

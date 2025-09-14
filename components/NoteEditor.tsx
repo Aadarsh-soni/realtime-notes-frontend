@@ -133,6 +133,33 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     };
   }, [noteId, token, user]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only handle shortcuts when not typing in input fields
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        // Handle undo/redo shortcuts
+        if (event.ctrlKey || event.metaKey) {
+          if (event.key === 'z' && !event.shiftKey) {
+            event.preventDefault();
+            sendUndo();
+          } else if (event.key === 'y' || (event.key === 'z' && event.shiftKey)) {
+            event.preventDefault();
+            sendRedo();
+          }
+        }
+      } else {
+        // Handle escape key for navigation
+        if (event.key === 'Escape') {
+          // You can add navigation logic here if needed
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [connected, collaborationRef.current]);
+
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newText = e.target.value;
     const oldText = content;
@@ -162,16 +189,68 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     }
   }
 
-  function sendUndo() {
-    // Note: Undo/Redo would need to be implemented in the backend
-    // For now, we'll just show a message
-    console.log("Undo requested - not implemented in current backend");
+  async function sendUndo() {
+    if (!token) {
+      console.log("Undo not available - no authentication token");
+      setCollaborationError("Please log in to use undo functionality");
+      return;
+    }
+
+    if (!connected || !collaborationRef.current) {
+      console.log("Undo not available - not connected to collaboration");
+      setCollaborationError("Undo not available - connect to real-time collaboration first");
+      return;
+    }
+
+    console.log("Attempting undo operation...");
+    try {
+      const result = await collaborationRef.current.undo();
+      console.log("Undo result:", result);
+      if (result.success && result.content !== undefined) {
+        setContent(result.content);
+        setOriginalContent(result.content);
+        setCollaborationError(""); // Clear any previous errors
+        console.log("Undo successful");
+      } else {
+        console.error("Undo failed:", result.message);
+        setCollaborationError(result.message || "Undo failed");
+      }
+    } catch (error) {
+      console.error("Undo error:", error);
+      setCollaborationError("Failed to undo operation - please try again");
+    }
   }
 
-  function sendRedo() {
-    // Note: Undo/Redo would need to be implemented in the backend
-    // For now, we'll just show a message
-    console.log("Redo requested - not implemented in current backend");
+  async function sendRedo() {
+    if (!token) {
+      console.log("Redo not available - no authentication token");
+      setCollaborationError("Please log in to use redo functionality");
+      return;
+    }
+
+    if (!connected || !collaborationRef.current) {
+      console.log("Redo not available - not connected to collaboration");
+      setCollaborationError("Redo not available - connect to real-time collaboration first");
+      return;
+    }
+
+    console.log("Attempting redo operation...");
+    try {
+      const result = await collaborationRef.current.redo();
+      console.log("Redo result:", result);
+      if (result.success && result.content !== undefined) {
+        setContent(result.content);
+        setOriginalContent(result.content);
+        setCollaborationError(""); // Clear any previous errors
+        console.log("Redo successful");
+      } else {
+        console.error("Redo failed:", result.message);
+        setCollaborationError(result.message || "Redo failed");
+      }
+    } catch (error) {
+      console.error("Redo error:", error);
+      setCollaborationError("Failed to redo operation - please try again");
+    }
   }
 
   return (
@@ -281,13 +360,27 @@ export function NoteEditor({ noteId }: { noteId: number }) {
 
       {/* Toolbar */}
       <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={sendUndo} disabled={!connected} className="flex items-center gap-2">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={sendUndo} 
+          disabled={!connected} 
+          className="flex items-center gap-2"
+          title={connected ? "Undo last change (Ctrl+Z)" : "Undo not available - connect to real-time collaboration"}
+        >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
           </svg>
           Undo
         </Button>
-        <Button variant="outline" size="sm" onClick={sendRedo} disabled={!connected} className="flex items-center gap-2">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={sendRedo} 
+          disabled={!connected} 
+          className="flex items-center gap-2"
+          title={connected ? "Redo last undone change (Ctrl+Y)" : "Redo not available - connect to real-time collaboration"}
+        >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />
           </svg>

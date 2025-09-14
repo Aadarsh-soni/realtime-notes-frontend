@@ -206,6 +206,72 @@ export class RealtimeCollaboration {
     }
   }
 
+  // Undo last operation
+  async undo(): Promise<{ success: boolean; message?: string; content?: string }> {
+    try {
+      const response = await fetch(`https://realtime-notes-backend.vercel.app/realtime/undo/${this.noteId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          this.onError(new Error('Authentication failed - please log in again'));
+          return { success: false, message: 'Authentication failed' };
+        } else if (response.status === 404) {
+          return { success: false, message: 'No operations to undo' };
+        } else {
+          this.onError(new Error(`Undo failed: ${errorData.error || response.statusText}`));
+          return { success: false, message: errorData.error || `Server error: ${response.status}` };
+        }
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Undo network error:', error);
+      this.onError(new Error('Network error - please check your connection'));
+      return { success: false, message: 'Network error' };
+    }
+  }
+
+  // Redo last undone operation
+  async redo(): Promise<{ success: boolean; message?: string; content?: string }> {
+    try {
+      const response = await fetch(`https://realtime-notes-backend.vercel.app/realtime/redo/${this.noteId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          this.onError(new Error('Authentication failed - please log in again'));
+          return { success: false, message: 'Authentication failed' };
+        } else if (response.status === 404) {
+          return { success: false, message: 'No operations to redo' };
+        } else {
+          this.onError(new Error(`Redo failed: ${errorData.error || response.statusText}`));
+          return { success: false, message: errorData.error || `Server error: ${response.status}` };
+        }
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Redo network error:', error);
+      this.onError(new Error('Network error - please check your connection'));
+      return { success: false, message: 'Network error' };
+    }
+  }
+
   // Get current status
   getStatus(): { noteId: number; userId: number; userName: string; isActive: boolean } {
     return {

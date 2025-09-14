@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { useAuthStore } from "@/libs/store";
+import { api } from "@/libs/api";
 import {
   Select,
   SelectContent,
@@ -31,10 +31,8 @@ export function FolderSelect({
 
   useEffect(() => {
     if (!token) return;
-    axios
-      .get(`${process.env.NEXT_PUBLIC_API_URL}/folders`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    api
+      .get('/folders')
       .then((res) => setFolders(res.data));
   }, [token]);
 
@@ -42,15 +40,9 @@ export function FolderSelect({
     setSelected(folderId);
     if (!token) return;
 
-    await axios.put(
-      `${process.env.NEXT_PUBLIC_API_URL}/notes/${noteId}`,
-      {
-        folderId: folderId === "none" ? null : Number(folderId),
-      },
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
+    await api.put(`/notes/${noteId}`, {
+      folderId: folderId === "none" ? null : Number(folderId),
+    });
   }
 
   return (
