@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "@/libs/store";
 import { Button } from "@/components/ui/button";
 import { notesAPI } from "@/libs/api";
@@ -28,7 +28,6 @@ export function NoteEditor({ noteId }: { noteId: number }) {
   const [loading, setLoading] = useState(true);
   
   const collaborationRef = useRef<RealtimeCollaboration | null>(null);
-  const lastOperationRef = useRef<number>(0);
 
   // Check for anonymous mode and load note content
   useEffect(() => {
@@ -119,158 +118,55 @@ export function NoteEditor({ noteId }: { noteId: number }) {
   // Check if content has changed
   const hasChanges = content !== originalContent;
 
-  // Initialize real-time collaboration
+  // Initialize WebSocket-based real-time collaboration
   useEffect(() => { 
-    const currentUser = isAnonymousMode ? anonymousUser : user;
-    const currentToken = isAnonymousMode ? 'anonymous' : token;
-    
-    if (!currentUser) return;
+    const currentToken = token;
+    if (!currentToken) return;
 
-    const initializeCollaboration = async () => {
-      try {
-        // Create collaboration instance
-        const collaboration = new RealtimeCollaboration(
-          noteId,
-          currentUser.id,
-          currentUser.name || `User ${currentUser.id}`,
-          currentToken || '',
-          {
-            onOperation: (operation: Operation) => {
-              console.log('Received operation:', operation);
-              // Apply operation to content
-              setContent((prev) => {
-                const before = prev.slice(0, operation.position);
-                const after = prev.slice(operation.position + operation.deleteLen);
-                return before + operation.insert + after;
-              });
-              lastOperationRef.current = operation.version || lastOperationRef.current + 1;
-            },
-            onPresenceUpdate: (users: RealtimePresenceUser[]) => {
-              console.log('Presence update:', users);
-              setPresence(users.map((u: RealtimePresenceUser) => ({
-                id: u.userId,
-                name: u.userName,
-                email: u.userEmail,
-                status: 'joined' as const
-              })));
-            },
-            onError: (error: Error) => {
-              console.error('Collaboration error:', error);
-              setCollaborationError(error.message);
-              setConnected(false);
-            }
-          }
-        );
-
-        collaborationRef.current = collaboration;
-
-        // Join collaboration
-        const result = await collaboration.join();
-        if (result.success) {
-          setConnected(true);
-          setCollaborationError("");
-        } else {
+    const collaboration = new RealtimeCollaboration(
+      noteId,
+      currentToken,
+      {
+        onOperation: (operation: Operation) => {
+          setContent((prev) => {
+            const before = prev.slice(0, operation.position);
+            const after = prev.slice(operation.position + operation.deleteLen);
+            return before + operation.insert + after;
+          });
+        },
+        onPresenceUpdate: (users: RealtimePresenceUser[]) => {
+          setPresence(users.map((u: RealtimePresenceUser) => ({
+            id: u.userId,
+            name: u.userName,
+            email: u.userEmail,
+            status: 'joined' as const
+          })));
+        },
+        onError: (error: Error) => {
+          setCollaborationError(error.message);
           setConnected(false);
-          setCollaborationError(result.message || "Failed to join collaboration");
         }
-      } catch (error) {
-        console.error("Failed to initialize collaboration:", error);
-        setConnected(false);
-        setCollaborationError("Failed to initialize real-time collaboration");
       }
-    };
+    );
 
-    initializeCollaboration();
+    collaborationRef.current = collaboration;
+    collaboration.connect();
+    setConnected(true);
 
     return () => {
-      if (collaborationRef.current) {
-        collaborationRef.current.leave();
-        collaborationRef.current = null;
-      }
+      collaboration.close();
+      collaborationRef.current = null;
     };
-  }, [noteId, token, user, isAnonymousMode, anonymousUser]);
+  }, [noteId, token]);
 
-  // Undo function
-  const sendUndo = useCallback(async () => {
-    if (!token) {
-      console.log("Undo not available - no authentication token");
-      setCollaborationError("Please log in to use undo functionality");
-      return;
-    }
+  // Undo/Redo not supported in WS flow currently
 
-    if (!connected || !collaborationRef.current) {
-      console.log("Undo not available - not connected to collaboration");
-      setCollaborationError("Undo not available - connect to real-time collaboration first");
-      return;
-    }
-
-    console.log("Attempting undo operation...");
-    try {
-      const result = await collaborationRef.current.undo();
-      console.log("Undo result:", result);
-      if (result.success && result.content !== undefined) {
-        setContent(result.content);
-        setOriginalContent(result.content);
-        setCollaborationError(""); // Clear any previous errors
-        console.log("Undo successful");
-      } else {
-        console.error("Undo failed:", result.message);
-        setCollaborationError(result.message || "Undo failed");
-      }
-    } catch (error) {
-      console.error("Undo error:", error);
-      setCollaborationError("Failed to undo operation - please try again");
-    }
-  }, [token, connected]);
-
-  // Redo function
-  const sendRedo = useCallback(async () => {
-    if (!token) {
-      console.log("Redo not available - no authentication token");
-      setCollaborationError("Please log in to use redo functionality");
-      return;
-    }
-
-    if (!connected || !collaborationRef.current) {
-      console.log("Redo not available - not connected to collaboration");
-      setCollaborationError("Redo not available - connect to real-time collaboration first");
-      return;
-    }
-
-    console.log("Attempting redo operation...");
-    try {
-      const result = await collaborationRef.current.redo();
-      console.log("Redo result:", result);
-      if (result.success && result.content !== undefined) {
-        setContent(result.content);
-        setOriginalContent(result.content);
-        setCollaborationError(""); // Clear any previous errors
-        console.log("Redo successful");
-      } else {
-        console.error("Redo failed:", result.message);
-        setCollaborationError(result.message || "Redo failed");
-      }
-    } catch (error) {
-      console.error("Redo error:", error);
-      setCollaborationError("Failed to redo operation - please try again");
-    }
-  }, [token, connected]);
-
-  // Keyboard shortcuts
+  // Keyboard shortcuts (disable undo/redo for now)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Only handle shortcuts when not typing in input fields
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-        // Handle undo/redo shortcuts
-        if (event.ctrlKey || event.metaKey) {
-          if (event.key === 'z' && !event.shiftKey) {
-            event.preventDefault();
-            sendUndo();
-          } else if (event.key === 'y' || (event.key === 'z' && event.shiftKey)) {
-            event.preventDefault();
-            sendRedo();
-          }
-        }
+        // reserved for future shortcuts
       } else {
         // Handle escape key for navigation
         if (event.key === 'Escape') {
@@ -281,7 +177,7 @@ export function NoteEditor({ noteId }: { noteId: number }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [connected, sendUndo, sendRedo]);
+  }, [connected]);
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newText = e.target.value;
@@ -298,17 +194,10 @@ export function NoteEditor({ noteId }: { noteId: number }) {
     // Send operation if connected
     if (connected && collaborationRef.current) {
       collaborationRef.current.sendOperation(
-        lastOperationRef.current,
         position,
         deleteLen,
         insert
-      ).then((result) => {
-        if (result.success) {
-          lastOperationRef.current += 1;
-        } else {
-          console.error('Failed to send operation:', result.message);
-        }
-      });
+      );
     }
   }
 
@@ -461,10 +350,9 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         <Button 
           variant="outline" 
           size="sm" 
-          onClick={sendUndo} 
-          disabled={!connected} 
+          disabled
           className="flex items-center gap-2"
-          title={connected ? "Undo last change (Ctrl+Z)" : "Undo not available - connect to real-time collaboration"}
+          title="Undo not available"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -474,10 +362,9 @@ export function NoteEditor({ noteId }: { noteId: number }) {
         <Button 
           variant="outline" 
           size="sm" 
-          onClick={sendRedo} 
-          disabled={!connected} 
+          disabled
           className="flex items-center gap-2"
-          title={connected ? "Redo last undone change (Ctrl+Y)" : "Redo not available - connect to real-time collaboration"}
+          title="Redo not available"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6" />

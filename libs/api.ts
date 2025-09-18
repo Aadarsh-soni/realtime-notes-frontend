@@ -2,12 +2,13 @@ import axios from 'axios';
 import { useAuthStore } from './store';
 
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://realtime-notes-backend.vercel.app';
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://realtime-notes-backend.vercel.app';
+// Support new env names with fallbacks for backward compatibility
+const API_BASE_HTTP = process.env.NEXT_PUBLIC_API_BASE_HTTP || process.env.NEXT_PUBLIC_API_URL || 'https://realtime-notes-backend.vercel.app';
+const API_BASE_WS = process.env.NEXT_PUBLIC_API_BASE_WS || process.env.NEXT_PUBLIC_WS_URL || 'wss://realtime-notes-backend.vercel.app';
 
 // Create axios instance with default config
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE_HTTP,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -56,7 +57,7 @@ api.interceptors.response.use(
 export const authAPI = {
   async login(email: string, password: string) {
     try {
-      console.log('Attempting login to:', `${API_BASE_URL}/auth/login`);
+      console.log('Attempting login to:', `${API_BASE_HTTP}/auth/login`);
       const response = await api.post('/auth/login', { email, password });
       console.log('Login response:', response.data);
       return response.data;
@@ -68,7 +69,7 @@ export const authAPI = {
 
   async register(email: string, password: string, name?: string) {
     try {
-      console.log('Attempting register to:', `${API_BASE_URL}/auth/register`);
+      console.log('Attempting register to:', `${API_BASE_HTTP}/auth/register`);
       const response = await api.post('/auth/register', { email, password, name });
       console.log('Register response:', response.data);
       return response.data;
@@ -80,7 +81,7 @@ export const authAPI = {
 
   async verifyToken(token: string) {
     try {
-      console.log('Attempting token verification to:', `${API_BASE_URL}/auth/verify`);
+      console.log('Attempting token verification to:', `${API_BASE_HTTP}/auth/verify`);
       const response = await api.get('/auth/verify', {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -150,9 +151,21 @@ export const foldersAPI = {
 };
 
 // WebSocket helper
-export const createWebSocket = (token: string, noteId: number) => {
-  return new WebSocket(`${WS_BASE_URL}/ws?token=${token}&noteId=${noteId}`);
+export const createWebSocket = (token: string) => {
+  return new WebSocket(`${API_BASE_WS}/ws?token=${encodeURIComponent(token)}`);
+};
+
+// Collaboration REST endpoints
+export const collabAPI = {
+  async listOnlineUsers() {
+    const response = await api.get('/collab/users/online');
+    return response.data as { users: { id: number; email: string; name?: string }[] };
+  },
+  async shareNote(noteId: number, toUserId: number) {
+    const response = await api.post('/collab/share', { noteId, toUserId });
+    return response.data as { success: boolean };
+  },
 };
 
 // Export base URLs for environment variables
-export { API_BASE_URL, WS_BASE_URL };
+export { API_BASE_HTTP, API_BASE_WS };
