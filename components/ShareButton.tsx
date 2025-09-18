@@ -26,6 +26,7 @@ export function ShareButton({ noteId, noteTitle }: ShareButtonProps) {
   const [toUserId, setToUserId] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   
   // Create shareable URL
   const shareUrl = typeof window !== 'undefined' 
@@ -43,18 +44,34 @@ export function ShareButton({ noteId, noteTitle }: ShareButtonProps) {
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: noteTitle || `Note ${noteId}`,
-          text: `Check out this collaborative note!`,
-          url: shareUrl,
-        });
-      } catch (err) {
-        console.error('Failed to share:', err);
-      }
-    } else {
+    if (!navigator.share) {
       handleCopy();
+      return;
+    }
+    if (sharing) return; // prevent re-entrancy: "An earlier share has not yet completed"
+    setSharing(true);
+    try {
+      await navigator.share({
+        title: noteTitle || `Note ${noteId}`,
+        text: `Check out this collaborative note!`,
+        url: shareUrl,
+      });
+    } catch (err: unknown) {
+      const anyErr = err as { name?: string; message?: string } | undefined;
+      const name = anyErr?.name || '';
+      const msg = anyErr?.message || '';
+      // Abort or InvalidState (another share in progress): silently ignore or fallback to copy
+      if (name === 'AbortError') {
+        // user cancelled share; no-op
+      } else if (name === 'InvalidStateError' || /earlier share has not yet completed/i.test(msg)) {
+        // fallback to copy to avoid stuck state
+        handleCopy();
+      } else {
+        console.error('Failed to share:', err);
+        handleCopy();
+      }
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -64,7 +81,7 @@ export function ShareButton({ noteId, noteTitle }: ShareButtonProps) {
     try {
       const res = await collabAPI.listOnlineUsers();
       setUsers(res.users);
-    } catch (e) {
+    } catch {
       setMessage("Failed to load users");
     }
   };
@@ -76,7 +93,7 @@ export function ShareButton({ noteId, noteTitle }: ShareButtonProps) {
     try {
       await collabAPI.shareNote(noteId, toUserId);
       setMessage("Invite sent");
-    } catch (e) {
+    } catch {
       setMessage("Failed to send invite");
     } finally {
       setSending(false);
@@ -143,7 +160,7 @@ export function ShareButton({ noteId, noteTitle }: ShareButtonProps) {
           )}
 
           <div className="flex gap-2">
-            <Button onClick={handleShare} className="flex-1">
+            <Button onClick={handleShare} disabled={sharing} className="flex-1">
               Copy Link
             </Button>
             <Button 
