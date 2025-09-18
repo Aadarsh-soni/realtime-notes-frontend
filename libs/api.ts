@@ -2,9 +2,20 @@ import axios from 'axios';
 import { useAuthStore } from './store';
 
 // API Configuration
-// Support new env names with fallbacks for backward compatibility
-const API_BASE_HTTP = process.env.NEXT_PUBLIC_API_BASE_HTTP || process.env.NEXT_PUBLIC_API_URL || 'https://realtime-notes-backend.vercel.app';
-const API_BASE_WS = process.env.NEXT_PUBLIC_API_BASE_WS || process.env.NEXT_PUBLIC_WS_URL || 'wss://realtime-notes-backend.vercel.app';
+// Support new env names with fallbacks for backward compatibility.
+// Prefer localhost in development if not provided via env.
+const isDev = process.env.NODE_ENV !== 'production';
+const DEFAULT_HTTP = isDev ? 'http://localhost:3000' : 'https://realtime-notes-backend.vercel.app';
+const DEFAULT_WS = isDev ? 'ws://localhost:3000' : 'wss://realtime-notes-backend.vercel.app';
+
+const API_BASE_HTTP = process.env.NEXT_PUBLIC_API_BASE_HTTP || process.env.NEXT_PUBLIC_API_URL || DEFAULT_HTTP;
+const API_BASE_WS = process.env.NEXT_PUBLIC_API_BASE_WS || process.env.NEXT_PUBLIC_WS_URL || DEFAULT_WS;
+
+if (typeof window !== 'undefined') {
+  // Helpful runtime log so misconfigured envs are obvious
+  // eslint-disable-next-line no-console
+  console.log('[collab] Using API_BASE_HTTP=', API_BASE_HTTP, 'API_BASE_WS=', API_BASE_WS);
+}
 
 // Create axios instance with default config
 export const api = axios.create({
